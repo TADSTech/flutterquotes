@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutterquotes/main_screen.dart';
+import 'package:flutterquotes/quote_provider.dart';
+import 'package:flutterquotes/theme_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'Favoritesscreen.dart';
-import 'Quotescreen.dart';
-import 'Settings.dart';
-import 'providers.dart';
-
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => QuoteProvider(prefs)),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -15,65 +24,39 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: 'Flutter Quotes',
-            theme: themeProvider.isDarkTheme ? ThemeData.dark() : ThemeData.light(),
-            home: HomeScreen(),
-          );
-        },
-      ),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: _buildTheme(themeProvider, false),
+          darkTheme: _buildTheme(themeProvider, true),
+          themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
+          home: const MainScreen(),
+        );
+      },
     );
   }
-}
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  _HomeScreenState createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _screens = [
-    QuoteScreen(),
-    FavoritesScreen(),
-    SettingsScreen(),
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite),
-            label: 'Favorites',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+  ThemeData _buildTheme(ThemeProvider provider, bool isDark) {
+    return ThemeData(
+      colorScheme: ColorScheme(
+        primary: provider.primaryColor,
+        secondary: provider.secondaryColor,
+        surface: provider.surface,
+        error: Colors.red,
+        onPrimary: provider.onPrimary,
+        onSecondary: provider.onSurface,
+        onSurface: provider.onSurface,
+        onError: Colors.white,
+        brightness: isDark ? Brightness.dark : Brightness.light,
+      ),
+      textTheme: TextTheme(
+        bodyLarge: TextStyle(color: provider.onSurface),
+        bodyMedium: TextStyle(color: provider.onSurface),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: provider.primaryColor,
+        foregroundColor: provider.onPrimary,
       ),
     );
   }

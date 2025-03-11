@@ -1,0 +1,2 @@
+C:/Users/Mike/StudioProjects/flutterquotes/android/app/.cxx/Debug/2u2427p3/x86/CMakeFiles/edit_cache.dir
+C:/Users/Mike/StudioProjects/flutterquotes/android/app/.cxx/Debug/2u2427p3/x86/CMakeFiles/rebuild_cache.dir
