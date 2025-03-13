@@ -1,21 +1,17 @@
-// Conditional Imports
 import 'dart:async';
 import 'dart:convert';
-// Conditional imports for web vs. mobile
-import 'dart:html' as html if (dart.library.io) 'dart:ui'; // Isolate web-only imports
-import 'dart:io' if (dart.library.html) 'dart:ui'; // Isolate mobile-only imports
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For rootBundle, ByteData, etc.
+import 'package:flutter/services.dart';
 import 'package:flutterquotes/http_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
-import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart'
-    if (dart.library.html) 'dart:ui';
-import 'package:path_provider/path_provider.dart' if (dart.library.html) 'dart:ui';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,17 +78,17 @@ class QuoteProvider with ChangeNotifier {
     }
   }
 
+  // In _generateVisualAppealingColors, ensure valid color ranges
   List<int> _generateVisualAppealingColors() {
     final random = Random();
-    final hsl = HSLColor.fromColor(
-      Color.fromARGB(
-        255,
-        random.nextInt(_colorRange),
-        random.nextInt(_colorRange),
-        random.nextInt(_colorRange),
-      ),
+    final color = Color.fromARGB(
+      255,
+      random.nextInt(256), // Use full 8-bit range
+      random.nextInt(256),
+      random.nextInt(256),
     );
 
+    final hsl = HSLColor.fromColor(color);
     return [
       hsl.withLightness(0.4).toColor().value,
       hsl.withLightness(0.6).toColor().value,
@@ -171,157 +167,153 @@ class QuoteProvider with ChangeNotifier {
 
   Future<String> _downloadAndSaveImage(String imageUrl) async {
     try {
-      if (kIsWeb) {
-        final response = await http.get(Uri.parse(imageUrl));
-        if (response.statusCode == 200) {
-          final base64Image = base64Encode(response.bodyBytes);
-          return 'data:image/jpeg;base64,$base64Image';
-        }
-      } else {
-        return await compute(_downloadAndSaveImageIsolate, imageUrl);
-      }
+      return await compute(_downloadAndSaveImageIsolate, imageUrl);
     } catch (e) {
       debugPrint('Error downloading image: $e');
+      return imageUrl;
     }
-    return imageUrl;
   }
 
   static Future<String> _downloadAndSaveImageIsolate(String imageUrl) async {
     final response = await http.get(Uri.parse(imageUrl));
     if (response.statusCode == 200) {
+      final image = img.decodeImage(response.bodyBytes);
+      if (image == null) throw Exception('Invalid downloaded image');
+
       final directory = await getApplicationDocumentsDirectory();
       final filePath = '${directory.path}/${imageUrl.hashCode}.jpg';
-      final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
+      await File(filePath).writeAsBytes(response.bodyBytes);
       return filePath;
     }
-    return imageUrl;
+    throw Exception('Failed to download image');
   }
 
   Future<String> saveQuoteImage(Quote quote) async {
     try {
       final response = await http.get(Uri.parse(quote.imageUrl));
-      if (response.statusCode == 200) {
-        final imageBytes = response.bodyBytes;
-        var image = img.decodeImage(imageBytes);
-        if (image == null) throw Exception('Failed to decode image');
+      if (response.statusCode != 200) throw Exception('Invalid response status');
 
-        // Apply blur effect
-        image = img.gaussianBlur(image, radius: 10);
+      final image = img.decodeImage(response.bodyBytes);
+      if (image == null) throw Exception('Failed to decode original image');
 
-        // Convert the image to a format compatible with `dart:ui`
-        final ui.Image uiImage = await _convertImageToUiImage(image);
+      // Convert to RGBA format first
+      final rgbaImage = img.copyResize(
+        image,
+        width: image.width,
+        height: image.height,
+      );
 
-        // Create a canvas to draw the text
-        final recorder = ui.PictureRecorder();
-        final canvas =
-            Canvas(recorder, Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()));
-
-        // Draw the blurred image onto the canvas
-        final paint = Paint();
-        canvas.drawImage(uiImage, Offset.zero, paint);
-
-        // Load a custom font (e.g., Arial)
-        final ByteData fontData = await rootBundle.load('fonts/budgeta_script/Budgeta Script.ttf');
-        final fontLoader = FontLoader('BudgetaScript')..addFont(Future.value(fontData));
-        await fontLoader.load();
-
-        // Draw the shadow text
-        final shadowTextStyle = ui.TextStyle(
-          color: ui.Color.fromARGB(100, 0, 0, 0), // Semi-transparent black
-          fontSize: 48,
-          fontFamily: 'Arial',
-        );
-        final shadowParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-          ..pushStyle(shadowTextStyle)
-          ..addText('"${quote.text}"');
-        final shadowParagraph = shadowParagraphBuilder.build();
-        shadowParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-        canvas.drawParagraph(shadowParagraph, ui.Offset(20, 20));
-
-        // Draw the main text
-        final textStyle = ui.TextStyle(
-          color: ui.Color.fromARGB(255, 255, 255, 255), // White
-          fontSize: 48,
-          fontFamily: 'Arial',
-        );
-        final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-          ..pushStyle(textStyle)
-          ..addText('"${quote.text}"');
-        final paragraph = paragraphBuilder.build();
-        paragraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-        canvas.drawParagraph(paragraph, ui.Offset(23, 23));
-
-        // Draw the author text
-        final authorTextStyle = ui.TextStyle(
-          color: ui.Color.fromARGB(255, 255, 255, 255), // White
-          fontSize: 24,
-          fontFamily: 'Arial',
-        );
-        final authorParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-          ..pushStyle(authorTextStyle)
-          ..addText('- ${quote.author}');
-        final authorParagraph = authorParagraphBuilder.build();
-        authorParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-        canvas.drawParagraph(authorParagraph, ui.Offset(20, 100));
-
-        // Convert the canvas to an image
-        final picture = recorder.endRecording();
-        final ui.Image finalUiImage = await picture.toImage(image.width, image.height);
-        final ByteData? byteData = await finalUiImage.toByteData(format: ui.ImageByteFormat.png);
-        final Uint8List pngBytes = byteData!.buffer.asUint8List();
-
-        // Save the image
-        if (kIsWeb) {
-          // Web: Use Blob and AnchorElement
-          final blob = html.Blob([pngBytes], 'image/jpeg');
-          final url = html.Url.createObjectUrlFromBlob(blob);
-          final anchor = html.AnchorElement(href: url)
-            ..setAttribute('download', 'quote.jpg')
-            ..click();
-          html.Url.revokeObjectUrl(url);
-          return url;
-        } else {
-          // Mobile: Save to gallery
-          final directory = await getApplicationDocumentsDirectory();
-          final filePath = '${directory.path}/${quote.text.hashCode}.jpg';
-          final file = File(filePath);
-          await file.writeAsBytes(pngBytes);
-          await ImageGallerySaverPlus.saveFile(filePath);
-          return filePath;
-        }
+      // Validate dimensions
+      if (rgbaImage.width == 0 || rgbaImage.height == 0) {
+        throw Exception('Invalid image dimensions after conversion');
       }
+
+      // Apply blur effect with alpha preservation
+      final blurredImage = img.gaussianBlur(rgbaImage, radius: 10);
+
+      // Convert to Flutter's ui.Image
+      final uiImage = await _convertImageToUiImage(blurredImage);
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(
+        recorder,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      );
+
+      final paint = Paint();
+      canvas.drawImage(uiImage, Offset.zero, paint);
+
+      final ByteData fontData = await rootBundle.load('fonts/budgeta_script/Budgeta Script.ttf');
+      final fontLoader = FontLoader('BudgetaScript')..addFont(Future.value(fontData));
+      await fontLoader.load();
+
+      // Draw the shadow text
+      final shadowTextStyle = ui.TextStyle(
+        color: ui.Color.fromARGB(100, 0, 0, 0), // Semi-transparent black
+        fontSize: 48,
+        fontFamily: 'Arial',
+      );
+      final shadowParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
+        ..pushStyle(shadowTextStyle)
+        ..addText('"${quote.text}"');
+      final shadowParagraph = shadowParagraphBuilder.build();
+      shadowParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
+      canvas.drawParagraph(shadowParagraph, ui.Offset(20, 20));
+
+      // Draw the main text
+      final textStyle = ui.TextStyle(
+        color: ui.Color.fromARGB(255, 255, 255, 255), // White
+        fontSize: 48,
+        fontFamily: 'Arial',
+      );
+      final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
+        ..pushStyle(textStyle)
+        ..addText('"${quote.text}"');
+      final paragraph = paragraphBuilder.build();
+      paragraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
+      canvas.drawParagraph(paragraph, ui.Offset(23, 23));
+
+      // Draw the author text
+      final authorTextStyle = ui.TextStyle(
+        color: ui.Color.fromARGB(255, 255, 255, 255), // White
+        fontSize: 24,
+        fontFamily: 'Arial',
+      );
+      final authorParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
+        ..pushStyle(authorTextStyle)
+        ..addText('- ${quote.author}');
+      final authorParagraph = authorParagraphBuilder.build();
+      authorParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
+      canvas.drawParagraph(authorParagraph, ui.Offset(20, 100));
+
+      final picture = recorder.endRecording();
+      final ui.Image finalUiImage = await picture.toImage(image.width, image.height);
+      final ByteData? byteData = await finalUiImage.toByteData(format: ui.ImageByteFormat.png);
+      final Uint8List pngBytes = byteData!.buffer.asUint8List();
+
+      // Save the final image
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/${quote.text.hashCode}.png';
+      await File(filePath).writeAsBytes(pngBytes);
+      await ImageGallerySaverPlus.saveFile(filePath);
+
+      return filePath;
     } catch (e) {
       debugPrint('Error saving quote image: $e');
+      return quote.imageUrl;
     }
-    return quote.imageUrl;
   }
 
   Future<ui.Image> _convertImageToUiImage(img.Image image) async {
-    final ByteData rgbaData = ByteData(image.width * image.height * 4);
-    for (var y = 0; y < image.height; y++) {
-      for (var x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        final color = ((pixel.a as int) << 24) |
-            ((pixel.r as int) << 16) |
-            ((pixel.g as int) << 8) |
-            (pixel.b as int);
-        rgbaData.setUint32((y * image.width + x) * 4, color);
+    try {
+      final completer = Completer<ui.Image>();
+      final rgbaBytes = image.getBytes(
+        order: img.ChannelOrder.rgba,
+      );
+
+      if (rgbaBytes.length != image.width * image.height * 4) {
+        throw Exception('Invalid RGBA byte data length');
       }
+
+      ui.decodeImageFromPixels(
+        rgbaBytes,
+        image.width,
+        image.height,
+        ui.PixelFormat.rgba8888,
+        (ui.Image result) => completer.complete(result),
+      );
+
+      return await completer.future;
+    } catch (e) {
+      debugPrint('Image conversion error: $e');
+      rethrow;
     }
-    final codec = await ui.instantiateImageCodec(rgbaData.buffer.asUint8List());
-    final frameInfo = await codec.getNextFrame();
-    return frameInfo.image;
   }
 
   Future<void> shareQuote(Quote quote) async {
     try {
       final imagePath = await saveQuoteImage(quote);
-      if (!kIsWeb) {
-        await Share.shareFiles([imagePath], text: '"${quote.text}" - ${quote.author}');
-      } else {
-        await Share.share('"${quote.text}" - ${quote.author}\n${quote.imageUrl}');
-      }
+      await Share.shareFiles([imagePath], text: '"${quote.text}" - ${quote.author}');
     } catch (e) {
       debugPrint('Error sharing quote: $e');
     }
