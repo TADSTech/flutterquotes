@@ -1,16 +1,41 @@
-# flutterquotes
+# FlutterQuotes
 
-A new Flutter project.
+An inspirational quotes app built with Flutter that allows you to discover, save, and share beautiful quotes.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
+- Browse random quotes by category
+- Save favorite quotes
+- Cache quotes for offline viewing
+- Customize app appearance (theme, colors, fonts)
+- Share quotes as images
+- Save quote images to gallery
 
-A few resources to get you started if this is your first Flutter project:
+## Installation
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1. Clone this repository
+2. Run `flutter pub get` to install dependencies
+3. Run the app on your device/emulator:
+   - Android: `flutter run`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Current Limitations
+
+⚠️ **Web support is not fully implemented yet**  
+Some features may not work correctly in web browsers. Assistance with web implementation would be appreciated.
+
+## Screenshots
+
+Not available yet
+
+## Dependencies
+
+- flutter_riverpod: State management
+- shared_preferences: Local storage
+- http: API calls
+- image_gallery_saver_plus: Save images to gallery
+- share_plus: Share functionality
+- url_launcher: Open external links
+
+## Contributing
+
+Contributions are welcome! Please open an issue or pull request if you'd like to help improve the app, especially with web support.

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeProvider with ChangeNotifier {
-  static const Color _defaultPrimary = Colors.blue;
-  static const Color _defaultSecondary = Colors.cyan;
+  static const Color defaultPrimary = Colors.blue;
+  static const Color defaultSecondary = Colors.cyan;
   static const String _prefsKey = 'theme_settings';
 
   final SharedPreferences prefs;
@@ -35,9 +35,12 @@ class ThemeProvider with ChangeNotifier {
 
   void _loadSavedPreferences() {
     try {
-      _themeMode = ThemeMode.values[prefs.getInt('themeMode') ?? ThemeMode.system.index];
-      _primaryColor = Color(prefs.getInt('primaryColor') ?? _defaultPrimary.value);
-      _secondaryColor = Color(prefs.getInt('secondaryColor') ?? _defaultSecondary.value);
+      _themeMode =
+          ThemeMode.values[prefs.getInt('themeMode') ?? ThemeMode.system.index];
+      _primaryColor =
+          Color(prefs.getInt('primaryColor') ?? defaultPrimary.value);
+      _secondaryColor =
+          Color(prefs.getInt('secondaryColor') ?? defaultSecondary.value);
       _isDynamicColor = prefs.getBool('isDynamicColor') ?? false;
     } catch (e) {
       _setDefaults();
@@ -47,8 +50,8 @@ class ThemeProvider with ChangeNotifier {
 
   void _setDefaults() {
     _themeMode = ThemeMode.system;
-    _primaryColor = _defaultPrimary;
-    _secondaryColor = _defaultSecondary;
+    _primaryColor = defaultPrimary;
+    _secondaryColor = defaultSecondary;
     _isDynamicColor = false;
   }
 
@@ -110,8 +113,9 @@ class ThemeProvider with ChangeNotifier {
   Color get navigationBarSelected => _colorScheme.primary;
   Color get navigationBarUnselected => _colorScheme.onSurfaceVariant;
 
-  ColorScheme get _colorScheme =>
-      _themeMode == ThemeMode.dark ? darkTheme.colorScheme : lightTheme.colorScheme;
+  ColorScheme get _colorScheme => _themeMode == ThemeMode.dark
+      ? darkTheme.colorScheme
+      : lightTheme.colorScheme;
 }
 
 class _CustomColors extends ThemeExtension<_CustomColors> {
@@ -125,7 +129,8 @@ class _CustomColors extends ThemeExtension<_CustomColors> {
   }
 
   @override
-  ThemeExtension<_CustomColors> lerp(ThemeExtension<_CustomColors>? other, double t) {
+  ThemeExtension<_CustomColors> lerp(
+      ThemeExtension<_CustomColors>? other, double t) {
     if (other is! _CustomColors) return this;
     return _CustomColors(
       secondary: Color.lerp(secondary, other.secondary, t)!,

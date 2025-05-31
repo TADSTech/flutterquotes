@@ -1,14 +1,23 @@
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutterquotes/main_screen.dart';
 import 'package:flutterquotes/quote_provider.dart';
+import 'package:flutterquotes/services/notification_service.dart';
 import 'package:flutterquotes/theme_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
+    await NotificationService.initialize();
+    await AndroidAlarmManager.initialize();
+    await Workmanager().initialize(
+      NotificationService.callbackDispatcher,
+      isInDebugMode: true,
+    );
     final prefs = await SharedPreferences.getInstance();
     runApp(MyQuotesApp(prefs: prefs));
   } catch (e) {

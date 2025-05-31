@@ -7,7 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutterquotes/http_service.dart';
+import 'package:flutterquotes/services/http_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
@@ -121,41 +121,28 @@ class QuoteProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await http.get(
-        Uri.parse('https://your-vercel-app.vercel.app/api/quote'),
-        headers: {'Accept': 'application/json'},
+      // First try the primary API with category if specified
+      final response = await HttpService.fetchQuote();
+      final quoteData = HttpService.parseQuoteResponse(response);
+
+      _currentQuote = Quote(
+        text: quoteData['text'] ?? 'No quote available',
+        author: quoteData['author'] ?? 'Unknown',
+        gradientColors: _generateVisualAppealingColors(),
+        imageUrl: _generateRandomImageUrl(),
+        category: quoteData['category'] ?? category ?? 'general',
       );
 
-      if (response.statusCode == 200) {
-        final jsonData = jsonDecode(response.body);
-
-        // Handle both successful and fallback responses
-        final quoteData = jsonData['success'] == true
-            ? jsonData['quote']
-            : jsonData['fallbackQuote'] ??
-                _createFallbackQuote(category).toJson();
-
-        _currentQuote = Quote(
-          text:
-              quoteData['text'] ?? quoteData['content'] ?? 'No quote available',
-          author: quoteData['author'] ?? 'Unknown',
-          gradientColors: _generateVisualAppealingColors(),
-          imageUrl: _generateRandomImageUrl(),
-          category: quoteData['category'] ?? category ?? 'general',
-        );
-
-        if (!isCached(_currentQuote!)) {
-          await saveToCache(category: _currentQuote!.category);
-        }
-      } else {
-        throw Exception(
-            'API request failed with status ${response.statusCode}');
+      if (!isCached(_currentQuote!)) {
+        await saveToCache(category: _currentQuote!.category);
       }
     } catch (e) {
       debugPrint('Error fetching quote: $e');
+
+      // If all APIs fail, use a local fallback
       _currentQuote = _createFallbackQuote(category);
 
-      // Optionally log the error to your backend or analytics
+      // Log error to analytics if needed
       // await _logError(e);
     } finally {
       _isLoading = false;
@@ -163,15 +150,42 @@ class QuoteProvider with ChangeNotifier {
     }
   }
 
-// Helper method to create a fallback quote
+// Helper method to create a fallback quote with better variety
   Quote _createFallbackQuote(String? category) {
+    final fallbackQuotes = [
+      {
+        'text':
+            "The greatest glory in living lies not in never falling, but in rising every time we fall.",
+        'author': "Nelson Mandela",
+        'category': 'Inspiration'
+      },
+      {
+        'text': "The way to get started is to quit talking and begin doing.",
+        'author': "Walt Disney",
+        'category': 'Motivation'
+      },
+      {
+        'text': "Life is what happens when you're busy making other plans.",
+        'author': "John Lennon",
+        'category': 'Life'
+      },
+      {
+        'text':
+            "The future belongs to those who believe in the beauty of their dreams.",
+        'author': "Eleanor Roosevelt",
+        'category': 'Wisdom'
+      }
+    ];
+
+    final random = Random();
+    final fallback = fallbackQuotes[random.nextInt(fallbackQuotes.length)];
+
     return Quote(
-      text:
-          "The greatest glory in living lies not in never falling, but in rising every time we fall.",
-      author: "Nelson Mandela",
+      text: fallback['text']!,
+      author: fallback['author']!,
       gradientColors: _generateVisualAppealingColors(),
       imageUrl: _generateRandomImageUrl(),
-      category: category ?? 'General',
+      category: category ?? fallback['category']!,
     );
   }
 
@@ -189,10 +203,13 @@ class QuoteProvider with ChangeNotifier {
       final canvas = Canvas(recorder);
       final paint = Paint();
 
+      // Get the selected font from preferences
+      final prefs = await SharedPreferences.getInstance();
+      final selectedFont = prefs.getString('quote_font') ?? 'Default';
+
       // Try to load the background image first
       try {
         if (kIsWeb) {
-          // For web, use a different approach to load images
           final image = await _loadImageForWeb(quote.imageUrl);
           final src = Rect.fromLTWH(
               0, 0, image.width.toDouble(), image.height.toDouble());
@@ -234,19 +251,47 @@ class QuoteProvider with ChangeNotifier {
         paint..color = Colors.black.withOpacity(0.3),
       );
 
-      // Load font
-      final fontLoader = FontLoader('QuoteFont')
-        ..addFont(
-            rootBundle.load('assets/fonts/budgeta_script/Budgeta_Script.ttf'));
-      await fontLoader.load();
+      // Determine font based on selection
+      String fontFamily;
+      switch (selectedFont) {
+        case 'Serif':
+          fontFamily = 'Serif';
+          break;
+        case 'Sans-serif':
+          fontFamily = 'Sans-serif';
+          break;
+        case 'Monospace':
+          fontFamily = 'Monospace';
+          break;
+        case 'Handwriting':
+          fontFamily = 'Handwriting';
+          break;
+        default:
+          fontFamily = 'QuoteFont'; // Default custom font
+      }
 
-      // Draw quote text with better spacing
+      // Load font if it's our custom font
+      if (fontFamily == 'QuoteFont') {
+        final fontLoader = FontLoader('QuoteFont')
+          ..addFont(rootBundle
+              .load('assets/fonts/budgeta_script/Budgeta_Script.ttf'));
+        await fontLoader.load();
+      }
+
+      // Calculate text positioning
+      final quoteText = '"${quote.text}"';
+      final quoteHeight =
+          _calculateTextHeight(quoteText, _imageWidth * 0.8, 36);
+      final authorHeight =
+          _calculateTextHeight(quote.author, _imageWidth * 0.8, 28);
+
+      // Draw quote text with proper spacing
       final quoteParagraph = _buildTextParagraph(
-        text: '"${quote.text}"',
+        text: quoteText,
         style: TextStyle(
           color: Colors.white,
           fontSize: 36,
-          fontFamily: 'QuoteFont',
+          fontFamily: fontFamily,
           height: 1.5,
           shadows: [
             Shadow(
@@ -258,16 +303,18 @@ class QuoteProvider with ChangeNotifier {
         ),
         maxWidth: _imageWidth * 0.8,
       );
-      canvas.drawParagraph(
-          quoteParagraph, Offset(_imageWidth * 0.1, _imageHeight * 0.3));
 
-      // Draw author text with more space from the quote
+      // Center the quote vertically with space for author
+      final quoteY = (_imageHeight - quoteHeight - authorHeight - 40) / 2;
+      canvas.drawParagraph(quoteParagraph, Offset(_imageWidth * 0.1, quoteY));
+
+      // Draw author text with proper spacing below quote
       final authorParagraph = _buildTextParagraph(
         text: '- ${quote.author}',
         style: TextStyle(
           color: Colors.white.withOpacity(0.9),
           fontSize: 28,
-          fontFamily: 'QuoteFont',
+          fontFamily: fontFamily,
           fontWeight: FontWeight.bold,
           shadows: [
             Shadow(
@@ -279,8 +326,8 @@ class QuoteProvider with ChangeNotifier {
         ),
         maxWidth: _imageWidth * 0.8,
       );
-      canvas.drawParagraph(
-          authorParagraph, Offset(_imageWidth * 0.1, _imageHeight * 0.65));
+      canvas.drawParagraph(authorParagraph,
+          Offset(_imageWidth * 0.1, quoteY + quoteHeight + 40));
 
       // Add watermark if sharing on Android
       if (forShare && !kIsWeb && Platform.isAndroid) {
@@ -316,6 +363,20 @@ class QuoteProvider with ChangeNotifier {
       debugPrint('Image capture error: $e');
       throw ImageCaptureException('Failed to capture quote image');
     }
+  }
+
+// Helper method to calculate text height
+  double _calculateTextHeight(String text, double maxWidth, double fontSize) {
+    final paragraph = ui.ParagraphBuilder(
+      ui.ParagraphStyle(
+        fontSize: fontSize,
+        maxLines: 100, // Arbitrary large number
+      ),
+    )..addText(text);
+
+    final builtParagraph = paragraph.build();
+    builtParagraph.layout(ui.ParagraphConstraints(width: maxWidth));
+    return builtParagraph.height;
   }
 
   ui.Paragraph _buildTextParagraph({

@@ -3,6 +3,7 @@ import 'package:flutterquotes/cached_screen.dart';
 import 'package:flutterquotes/category_screen.dart';
 import 'package:flutterquotes/favorites_screen.dart';
 import 'package:flutterquotes/home_screen.dart';
+import 'package:flutterquotes/services/notification_service.dart';
 import 'package:flutterquotes/settings_screen.dart';
 import 'package:flutterquotes/theme_provider.dart';
 import 'package:provider/provider.dart';
@@ -159,9 +160,9 @@ class _MainScreenState extends State<MainScreen> {
           label: 'Home',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.bookmark_outline),
-          activeIcon: Icon(Icons.bookmark),
-          label: 'Bookmarks',
+          icon: Icon(Icons.cached_outlined),
+          activeIcon: Icon(Icons.cached),
+          label: 'Cache',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.favorite_outline),
