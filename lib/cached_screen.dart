@@ -15,8 +15,15 @@ class CachedQuotesScreen extends StatelessWidget {
       return MemoryImage(base64Decode(imageUrl.split(',').last));
     } else if (imageUrl.startsWith('http')) {
       return NetworkImage(imageUrl);
+    } else if (kIsWeb) {
+      return const AssetImage('assets/fallback_image.png');
+    } else {
+      try {
+        return FileImage(io.File(imageUrl));
+      } catch (e) {
+        return const AssetImage('assets/fallback_image.png');
+      }
     }
-    return kIsWeb ? const AssetImage('assets/fallback_image.png') : FileImage(io.File(imageUrl));
   }
 
   Future<void> _confirmDelete(BuildContext context, Quote quote) async {
@@ -43,6 +50,23 @@ class CachedQuotesScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _shareQuote(BuildContext context, Quote quote) async {
+    final theme = Theme.of(context);
+    final quoteProvider = Provider.of<QuoteProvider>(context, listen: false);
+
+    try {
+      await quoteProvider.shareQuote(quote, theme);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to share quote: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -60,7 +84,8 @@ class CachedQuotesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuotesList(BuildContext context, ThemeData theme, List<Quote> quotes) {
+  Widget _buildQuotesList(
+      BuildContext context, ThemeData theme, List<Quote> quotes) {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: quotes.length,
@@ -82,7 +107,8 @@ class CachedQuotesScreen extends StatelessWidget {
         children: [
           if (quote.imageUrl.isNotEmpty)
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
               child: Image(
                 image: _getImageProvider(quote.imageUrl),
                 height: 180,
@@ -102,7 +128,8 @@ class CachedQuotesScreen extends StatelessWidget {
                     child: Center(
                       child: CircularProgressIndicator(
                         value: progress.expectedTotalBytes != null
-                            ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+                            ? progress.cumulativeBytesLoaded /
+                                progress.expectedTotalBytes!
                             : null,
                       ),
                     ),
@@ -114,9 +141,11 @@ class CachedQuotesScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.broken_image, size: 48, color: theme.colorScheme.onSurface),
+                      Icon(Icons.broken_image,
+                          size: 48, color: theme.colorScheme.onSurface),
                       const SizedBox(height: 8),
-                      Text('Failed to load image', style: theme.textTheme.bodySmall),
+                      Text('Failed to load image',
+                          style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
@@ -147,12 +176,20 @@ class CachedQuotesScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(
-                    icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
-                    onPressed: () => _confirmDelete(context, quote),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.share, color: theme.colorScheme.primary),
+                      onPressed: () => _shareQuote(context, quote),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(Icons.delete_outline,
+                          color: theme.colorScheme.error),
+                      onPressed: () => _confirmDelete(context, quote),
+                    ),
+                  ],
                 ),
               ],
             ),

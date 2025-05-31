@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutterquotes/cached_screen.dart';
+import 'package:flutterquotes/category_screen.dart';
 import 'package:flutterquotes/favorites_screen.dart';
 import 'package:flutterquotes/home_screen.dart';
 import 'package:flutterquotes/settings_screen.dart';
@@ -15,73 +16,167 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const CachedQuotesScreen(),
-    const FavoritesScreen(),
-    const SettingsScreen(),
-  ];
+
+  List<Widget> get _screens => const [
+        HomeScreen(),
+        CachedQuotesScreen(),
+        FavoritesScreen(),
+        CategoryScreen(),
+        SettingsScreen(),
+      ];
+
+  // Define a breakpoint for switching layouts
+  static const double _kTabletBreakpoint = 600.0;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isLargeScreen = screenWidth >= _kTabletBreakpoint;
+    return isLargeScreen
+        ? _buildLargeScreenLayout()
+        : _buildSmallScreenLayout();
+  }
 
+  // Layout for smaller screens (mobile)
+  Widget _buildSmallScreenLayout() {
     return Scaffold(
       body: _screens[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              spreadRadius: 2,
-            )
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-          backgroundColor: themeProvider.navigationBarBackground,
-          selectedItemColor: themeProvider.navigationBarSelected,
-          unselectedItemColor: themeProvider.navigationBarUnselected,
-          selectedLabelStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: themeProvider.navigationBarSelected,
+      bottomNavigationBar: _buildBottomNavigationBar(context),
+    );
+  }
+
+  // Layout for larger screens (tablet/desktop)
+  Widget _buildLargeScreenLayout() {
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: true);
+
+    return Scaffold(
+      body: Row(
+        children: [
+          // NavigationRail for larger screens
+          NavigationRail(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            labelType: NavigationRailLabelType.all,
+            backgroundColor: themeProvider.navigationBarBackground,
+            selectedIconTheme:
+                IconThemeData(color: themeProvider.navigationBarSelected),
+            unselectedIconTheme:
+                IconThemeData(color: themeProvider.navigationBarUnselected),
+            selectedLabelTextStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: themeProvider.navigationBarSelected,
+            ),
+            unselectedLabelTextStyle: TextStyle(
+              fontSize: 12,
+              color: themeProvider.navigationBarUnselected,
+            ),
+            destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: Text('Home'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.cached_outlined),
+                selectedIcon: Icon(Icons.cached),
+                label: Text('Cache'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.favorite_outline),
+                selectedIcon: Icon(Icons.favorite),
+                label: Text('Favorites'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.category_outlined),
+                selectedIcon: Icon(Icons.category),
+                label: Text('Categories'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text('Settings'),
+              ),
+            ],
           ),
-          unselectedLabelStyle: TextStyle(
-            fontSize: 12,
-            color: themeProvider.navigationBarUnselected,
+          // A vertical divider for visual separation (optional)
+          VerticalDivider(
+              thickness: 1, width: 1, color: Colors.grey.withOpacity(0.3)),
+          // Main content takes the rest of the space
+          Expanded(
+            child: _screens[_currentIndex],
           ),
-          showSelectedLabels: true,
-          showUnselectedLabels: true,
-          type: BottomNavigationBarType.fixed,
-          elevation: 8,
-          items: [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.bookmark_outline),
-              activeIcon: Icon(Icons.bookmark),
-              label: 'Bookmarks',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.favorite_outline),
-              activeIcon: Icon(Icons.favorite),
-              label: 'Favorites',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
+
+  Widget _buildBottomNavigationBar(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: true);
+
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        backgroundColor: themeProvider.navigationBarBackground,
+        selectedItemColor: themeProvider.navigationBarSelected,
+        unselectedItemColor: themeProvider.navigationBarUnselected,
+        selectedLabelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: themeProvider.navigationBarSelected,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 12,
+          color: themeProvider.navigationBarUnselected,
+        ),
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+        items: _navigationItems,
+      ),
+    );
+  }
+
+  List<BottomNavigationBarItem> get _navigationItems => const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.home_outlined),
+          activeIcon: Icon(Icons.home),
+          label: 'Home',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.bookmark_outline),
+          activeIcon: Icon(Icons.bookmark),
+          label: 'Bookmarks',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.favorite_outline),
+          activeIcon: Icon(Icons.favorite),
+          label: 'Favorites',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.category_outlined),
+          activeIcon: Icon(Icons.category),
+          label: 'Categories',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.settings_outlined),
+          activeIcon: Icon(Icons.settings),
+          label: 'Settings',
+        ),
+      ];
 }

@@ -20,14 +20,27 @@ import 'quote_model.dart';
 class QuoteProvider with ChangeNotifier {
   static const _cachedQuotesKey = 'cachedQuotes';
   static const _favoritesKey = 'favorites';
-  static const _colorRange = 200;
+  static const _categoriesKey = 'categories';
   static const _imageWidth = 800;
   static const _imageHeight = 600;
+  static const _watermarkText = 'FlutterQuotes';
+
+  static const List<String> defaultCategories = [
+    'General',
+    'Inspiration',
+    'Motivation',
+    'Love',
+    'Life',
+    'Wisdom',
+    'Funny'
+  ];
 
   final SharedPreferences prefs;
   Quote? _currentQuote;
   List<Quote> _cachedQuotes = [];
   List<Quote> _favorites = [];
+  List<String> _categories = [];
+  bool _isLoading = false; // Added _isLoading flag
 
   QuoteProvider(this.prefs) {
     _initializeData();
@@ -36,54 +49,303 @@ class QuoteProvider with ChangeNotifier {
   Quote? get currentQuote => _currentQuote;
   List<Quote> get cachedQuotes => List.unmodifiable(_cachedQuotes);
   List<Quote> get favorites => List.unmodifiable(_favorites);
+  List<String> get categories => List.unmodifiable(_categories);
+  bool get isLoading => _isLoading; // Getter for isLoading
 
   bool isCached(Quote quote) => _cachedQuotes.any((q) => q.text == quote.text);
   bool isFavorite(Quote quote) => _favorites.any((q) => q.text == quote.text);
 
   Future<void> _initializeData() async {
-    await _loadCachedQuotes();
-    await _loadFavorites();
-    notifyListeners();
-  }
-
-  Future<void> fetchQuote() async {
     try {
-      final client = await HttpService.client;
-      final response = await client.get(
-        Uri.parse(HttpService.getProxyUrl('https://zenquotes.io/api/random')),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body)[0];
-        final randomImageId = Random().nextInt(1000);
-        _currentQuote = Quote(
-          text: data['q'] ?? '',
-          author: data['a'] ?? 'Unknown',
-          gradientColors: _generateVisualAppealingColors(),
-          imageUrl: 'https://picsum.photos/$_imageWidth/$_imageHeight?random=$randomImageId',
-        );
-        notifyListeners();
-      } else {
-        throw http.ClientException('Failed to fetch quote: ${response.statusCode}');
-      }
-    } on http.ClientException catch (e) {
-      debugPrint('HTTP Client Exception: ${e.toString()}');
-      throw Exception('Network error, please check your connection');
-    } on FormatException catch (e) {
-      debugPrint('JSON Format Exception: ${e.toString()}');
-      throw Exception('Data format error');
+      await Future.wait([
+        loadCategories(),
+        _loadCachedQuotes(),
+        _loadFavorites(),
+      ]);
+      notifyListeners();
     } catch (e) {
-      debugPrint('General Exception: ${e.toString()}');
-      throw Exception('Failed to fetch quote: $e');
+      debugPrint('Initialization error: $e');
+      notifyListeners();
     }
   }
 
-  // In _generateVisualAppealingColors, ensure valid color ranges
+  Future<void> loadCategories() async {
+    try {
+      final savedCategories = prefs.getStringList(_categoriesKey);
+      _categories = savedCategories != null
+          ? List<String>.from(savedCategories)
+          : List<String>.from(defaultCategories);
+    } catch (e) {
+      _categories = List<String>.from(defaultCategories);
+      await prefs.setStringList(_categoriesKey, _categories);
+    }
+  }
+
+  Future<void> addCategory(String category) async {
+    final trimmedCategory = category.trim();
+    if (trimmedCategory.isEmpty || _categories.contains(trimmedCategory)) {
+      return;
+    }
+
+    // Create a new modifiable list from the current categories
+    final newCategories = List<String>.from(_categories);
+    newCategories.add(trimmedCategory);
+
+    // Assign back to the private field
+    _categories = newCategories;
+
+    await prefs.setStringList(_categoriesKey, _categories);
+    notifyListeners();
+    debugPrint('Saved categories: $_categories');
+  }
+
+  Future<void> removeCategory(String category) async {
+    if (!_categories.contains(category) ||
+        defaultCategories.contains(category)) {
+      return;
+    }
+
+    // Create a new modifiable list from the current categories
+    final newCategories = List<String>.from(_categories);
+    newCategories.remove(category);
+
+    // Assign back to the private field
+    _categories = newCategories;
+
+    await prefs.setStringList(_categoriesKey, _categories);
+    notifyListeners();
+  }
+
+  Future<void> fetchQuote({String? category}) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await http.get(
+        Uri.parse('https://your-vercel-app.vercel.app/api/quote'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final jsonData = jsonDecode(response.body);
+
+        // Handle both successful and fallback responses
+        final quoteData = jsonData['success'] == true
+            ? jsonData['quote']
+            : jsonData['fallbackQuote'] ??
+                _createFallbackQuote(category).toJson();
+
+        _currentQuote = Quote(
+          text:
+              quoteData['text'] ?? quoteData['content'] ?? 'No quote available',
+          author: quoteData['author'] ?? 'Unknown',
+          gradientColors: _generateVisualAppealingColors(),
+          imageUrl: _generateRandomImageUrl(),
+          category: quoteData['category'] ?? category ?? 'general',
+        );
+
+        if (!isCached(_currentQuote!)) {
+          await saveToCache(category: _currentQuote!.category);
+        }
+      } else {
+        throw Exception(
+            'API request failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Error fetching quote: $e');
+      _currentQuote = _createFallbackQuote(category);
+
+      // Optionally log the error to your backend or analytics
+      // await _logError(e);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+// Helper method to create a fallback quote
+  Quote _createFallbackQuote(String? category) {
+    return Quote(
+      text:
+          "The greatest glory in living lies not in never falling, but in rising every time we fall.",
+      author: "Nelson Mandela",
+      gradientColors: _generateVisualAppealingColors(),
+      imageUrl: _generateRandomImageUrl(),
+      category: category ?? 'General',
+    );
+  }
+
+  String _generateRandomImageUrl() {
+    final Random random = Random();
+    final int randomImageId =
+        random.nextInt(1000); // Or use your existing randomId logic
+    return 'https://picsum.photos/$_imageWidth/$_imageHeight?random=$randomImageId';
+  }
+
+  Future<Uint8List> _captureQuoteWidget(Quote quote, ThemeData theme,
+      {bool forShare = false}) async {
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final paint = Paint();
+
+      // Try to load the background image first
+      try {
+        if (kIsWeb) {
+          // For web, use a different approach to load images
+          final image = await _loadImageForWeb(quote.imageUrl);
+          final src = Rect.fromLTWH(
+              0, 0, image.width.toDouble(), image.height.toDouble());
+          final dst = Rect.fromLTWH(
+              0, 0, _imageWidth.toDouble(), _imageHeight.toDouble());
+          canvas.drawImageRect(image, src, dst, paint);
+        } else {
+          final imageResponse = await http.get(Uri.parse(quote.imageUrl));
+          if (imageResponse.statusCode == 200) {
+            final image = await decodeImageFromList(imageResponse.bodyBytes);
+            final src = Rect.fromLTWH(
+                0, 0, image.width.toDouble(), image.height.toDouble());
+            final dst = Rect.fromLTWH(
+                0, 0, _imageWidth.toDouble(), _imageHeight.toDouble());
+            canvas.drawImageRect(image, src, dst, paint);
+          } else {
+            throw Exception('Failed to load image');
+          }
+        }
+      } catch (e) {
+        debugPrint('Using gradient fallback: $e');
+        // Fallback to gradient background
+        final gradient = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(quote.gradientColors[0]),
+            Color(quote.gradientColors[1]),
+          ],
+        );
+        final rect = Rect.fromLTWH(
+            0, 0, _imageWidth.toDouble(), _imageHeight.toDouble());
+        canvas.drawRect(rect, paint..shader = gradient.createShader(rect));
+      }
+
+      // Add a semi-transparent overlay for better text readability
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, _imageWidth.toDouble(), _imageHeight.toDouble()),
+        paint..color = Colors.black.withOpacity(0.3),
+      );
+
+      // Load font
+      final fontLoader = FontLoader('QuoteFont')
+        ..addFont(
+            rootBundle.load('assets/fonts/budgeta_script/Budgeta_Script.ttf'));
+      await fontLoader.load();
+
+      // Draw quote text with better spacing
+      final quoteParagraph = _buildTextParagraph(
+        text: '"${quote.text}"',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 36,
+          fontFamily: 'QuoteFont',
+          height: 1.5,
+          shadows: [
+            Shadow(
+              blurRadius: 6,
+              color: Colors.black.withOpacity(0.5),
+              offset: Offset(2, 2),
+            ),
+          ],
+        ),
+        maxWidth: _imageWidth * 0.8,
+      );
+      canvas.drawParagraph(
+          quoteParagraph, Offset(_imageWidth * 0.1, _imageHeight * 0.3));
+
+      // Draw author text with more space from the quote
+      final authorParagraph = _buildTextParagraph(
+        text: '- ${quote.author}',
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.9),
+          fontSize: 28,
+          fontFamily: 'QuoteFont',
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(
+              blurRadius: 4,
+              color: Colors.black.withOpacity(0.5),
+              offset: Offset(1, 1),
+            ),
+          ],
+        ),
+        maxWidth: _imageWidth * 0.8,
+      );
+      canvas.drawParagraph(
+          authorParagraph, Offset(_imageWidth * 0.1, _imageHeight * 0.65));
+
+      // Add watermark if sharing on Android
+      if (forShare && !kIsWeb && Platform.isAndroid) {
+        final watermarkParagraph = _buildTextParagraph(
+          text: _watermarkText,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.5),
+            fontSize: 20,
+            fontStyle: FontStyle.italic,
+          ),
+          maxWidth: _imageWidth.toDouble(),
+        );
+        canvas.drawParagraph(
+          watermarkParagraph,
+          Offset(
+            _imageWidth - watermarkParagraph.width - 20,
+            _imageHeight - watermarkParagraph.height - 20,
+          ),
+        );
+      }
+
+      // Convert to image
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(_imageWidth, _imageHeight);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData == null) {
+        throw ImageCaptureException('Failed to convert image to bytes');
+      }
+
+      return byteData.buffer.asUint8List();
+    } catch (e) {
+      debugPrint('Image capture error: $e');
+      throw ImageCaptureException('Failed to capture quote image');
+    }
+  }
+
+  ui.Paragraph _buildTextParagraph({
+    required String text,
+    required TextStyle style,
+    required double maxWidth,
+  }) {
+    final builder = ui.ParagraphBuilder(
+      ui.ParagraphStyle(
+        textAlign: TextAlign.center,
+        fontSize: style.fontSize,
+        fontFamily: style.fontFamily,
+        fontWeight: style.fontWeight,
+        fontStyle: style.fontStyle,
+        height: style.height,
+      ),
+    )
+      ..pushStyle(style.getTextStyle())
+      ..addText(text);
+
+    final paragraph = builder.build();
+    paragraph.layout(ui.ParagraphConstraints(width: maxWidth));
+    return paragraph;
+  }
+
   List<int> _generateVisualAppealingColors() {
     final random = Random();
     final color = Color.fromARGB(
       255,
-      random.nextInt(256), // Use full 8-bit range
+      random.nextInt(256),
       random.nextInt(256),
       random.nextInt(256),
     );
@@ -95,10 +357,39 @@ class QuoteProvider with ChangeNotifier {
     ];
   }
 
+  Future<ui.Image> _loadImageForWeb(String imageUrl) async {
+    final completer = Completer<ui.Image>();
+    final img.Image? image = await _loadWebImage(imageUrl);
+    if (image == null) {
+      throw Exception('Failed to load web image');
+    }
+
+    final codec = await ui.instantiateImageCodec(
+      Uint8List.fromList(img.encodePng(image)),
+    );
+    final frame = await codec.getNextFrame();
+    completer.complete(frame.image);
+    return completer.future;
+  }
+
+  Future<img.Image?> _loadWebImage(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        return img.decodeImage(response.bodyBytes);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error loading web image: $e');
+      return null;
+    }
+  }
+
   Future<void> _loadCachedQuotes() async {
     try {
       final quotesJson = prefs.getStringList(_cachedQuotesKey) ?? [];
-      _cachedQuotes = quotesJson.map((json) => Quote.fromJson(jsonDecode(json))).toList();
+      _cachedQuotes =
+          quotesJson.map((json) => Quote.fromJson(jsonDecode(json))).toList();
     } catch (e) {
       await prefs.remove(_cachedQuotesKey);
       _cachedQuotes = [];
@@ -108,27 +399,12 @@ class QuoteProvider with ChangeNotifier {
   Future<void> _loadFavorites() async {
     try {
       final favsJson = prefs.getStringList(_favoritesKey) ?? [];
-      _favorites = favsJson.map((json) => Quote.fromJson(jsonDecode(json))).toList();
+      _favorites =
+          favsJson.map((json) => Quote.fromJson(jsonDecode(json))).toList();
     } catch (e) {
       await prefs.remove(_favoritesKey);
       _favorites = [];
     }
-  }
-
-  Future<void> saveToCache() async {
-    if (_currentQuote == null || isCached(_currentQuote!)) return;
-
-    final localImagePath = await _downloadAndSaveImage(_currentQuote!.imageUrl);
-    final cachedQuote = Quote(
-      text: _currentQuote!.text,
-      author: _currentQuote!.author,
-      gradientColors: _currentQuote!.gradientColors,
-      imageUrl: localImagePath,
-    );
-
-    _cachedQuotes.add(cachedQuote);
-    await _persistCachedQuotes();
-    notifyListeners();
   }
 
   Future<void> removeFromCache(Quote quote) async {
@@ -175,147 +451,147 @@ class QuoteProvider with ChangeNotifier {
   }
 
   static Future<String> _downloadAndSaveImageIsolate(String imageUrl) async {
-    final response = await http.get(Uri.parse(imageUrl));
-    if (response.statusCode == 200) {
-      final image = img.decodeImage(response.bodyBytes);
-      if (image == null) throw Exception('Invalid downloaded image');
-
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = '${directory.path}/${imageUrl.hashCode}.jpg';
-      await File(filePath).writeAsBytes(response.bodyBytes);
-      return filePath;
+    if (kIsWeb) {
+      // For web, we'll return the original URL as we can't save files locally
+      return imageUrl;
+    } else {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        final directory = await getApplicationDocumentsDirectory();
+        final filePath = '${directory.path}/${imageUrl.hashCode}.jpg';
+        await File(filePath).writeAsBytes(response.bodyBytes);
+        return filePath;
+      }
+      throw Exception('Failed to download image');
     }
-    throw Exception('Failed to download image');
   }
 
-  Future<String> saveQuoteImage(Quote quote) async {
+  Future<String> saveQuoteImage(Quote quote, ThemeData theme) async {
     try {
-      final response = await http.get(Uri.parse(quote.imageUrl));
-      if (response.statusCode != 200) throw Exception('Invalid response status');
+      final imageBytes = await _captureQuoteWidget(quote, theme);
 
-      final image = img.decodeImage(response.bodyBytes);
-      if (image == null) throw Exception('Failed to decode original image');
+      if (kIsWeb) {
+        return 'data:image/png;base64,${base64Encode(imageBytes)}';
+      } else {
+        final directory = await getTemporaryDirectory();
+        final filePath = '${directory.path}/${quote.text.hashCode}.png';
+        await File(filePath).writeAsBytes(imageBytes);
+        await ImageGallerySaverPlus.saveFile(filePath);
+        return filePath;
+      }
+    } on ImageCaptureException catch (e) {
+      debugPrint('Save quote image error: ${e.message}');
+      throw QuoteSaveException('Failed to create quote image');
+    } catch (e) {
+      debugPrint('Unexpected save error: $e');
+      throw QuoteSaveException('Failed to save quote');
+    }
+  }
 
-      // Convert to RGBA format first
-      final rgbaImage = img.copyResize(
-        image,
-        width: image.width,
-        height: image.height,
-      );
+  Future<void> shareQuote(Quote quote, ThemeData theme) async {
+    try {
+      // For cached quotes with local images, we need to handle them differently
+      String imagePath = quote.imageUrl;
 
-      // Validate dimensions
-      if (rgbaImage.width == 0 || rgbaImage.height == 0) {
-        throw Exception('Invalid image dimensions after conversion');
+      if (!kIsWeb && !quote.imageUrl.startsWith('http')) {
+        // For mobile with local image, we need to create a shareable version
+        final imageBytes = await File(quote.imageUrl).readAsBytes();
+        final tempDir = await getTemporaryDirectory();
+        imagePath =
+            '${tempDir.path}/quote_${DateTime.now().millisecondsSinceEpoch}.png';
+        await File(imagePath).writeAsBytes(imageBytes);
       }
 
-      // Apply blur effect with alpha preservation
-      final blurredImage = img.gaussianBlur(rgbaImage, radius: 10);
+      final imageBytes =
+          await _captureQuoteWidget(quote, theme, forShare: true);
+      final tempDir = await getTemporaryDirectory();
+      final filePath =
+          '${tempDir.path}/quote_${DateTime.now().millisecondsSinceEpoch}.png';
+      await File(filePath).writeAsBytes(imageBytes);
 
-      // Convert to Flutter's ui.Image
-      final uiImage = await _convertImageToUiImage(blurredImage);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(
-        recorder,
-        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-      );
-
-      final paint = Paint();
-      canvas.drawImage(uiImage, Offset.zero, paint);
-
-      final ByteData fontData = await rootBundle.load('fonts/budgeta_script/Budgeta Script.ttf');
-      final fontLoader = FontLoader('BudgetaScript')..addFont(Future.value(fontData));
-      await fontLoader.load();
-
-      // Draw the shadow text
-      final shadowTextStyle = ui.TextStyle(
-        color: ui.Color.fromARGB(100, 0, 0, 0), // Semi-transparent black
-        fontSize: 48,
-        fontFamily: 'Arial',
-      );
-      final shadowParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-        ..pushStyle(shadowTextStyle)
-        ..addText('"${quote.text}"');
-      final shadowParagraph = shadowParagraphBuilder.build();
-      shadowParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-      canvas.drawParagraph(shadowParagraph, ui.Offset(20, 20));
-
-      // Draw the main text
-      final textStyle = ui.TextStyle(
-        color: ui.Color.fromARGB(255, 255, 255, 255), // White
-        fontSize: 48,
-        fontFamily: 'Arial',
-      );
-      final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-        ..pushStyle(textStyle)
-        ..addText('"${quote.text}"');
-      final paragraph = paragraphBuilder.build();
-      paragraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-      canvas.drawParagraph(paragraph, ui.Offset(23, 23));
-
-      // Draw the author text
-      final authorTextStyle = ui.TextStyle(
-        color: ui.Color.fromARGB(255, 255, 255, 255), // White
-        fontSize: 24,
-        fontFamily: 'Arial',
-      );
-      final authorParagraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle())
-        ..pushStyle(authorTextStyle)
-        ..addText('- ${quote.author}');
-      final authorParagraph = authorParagraphBuilder.build();
-      authorParagraph.layout(ui.ParagraphConstraints(width: image.width.toDouble()));
-      canvas.drawParagraph(authorParagraph, ui.Offset(20, 100));
-
-      final picture = recorder.endRecording();
-      final ui.Image finalUiImage = await picture.toImage(image.width, image.height);
-      final ByteData? byteData = await finalUiImage.toByteData(format: ui.ImageByteFormat.png);
-      final Uint8List pngBytes = byteData!.buffer.asUint8List();
-
-      // Save the final image
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = '${directory.path}/${quote.text.hashCode}.png';
-      await File(filePath).writeAsBytes(pngBytes);
-      await ImageGallerySaverPlus.saveFile(filePath);
-
-      return filePath;
+      if (kIsWeb) {
+        await Share.share(
+          '"${quote.text}" - ${quote.author}',
+          subject: 'Inspirational Quote',
+        );
+      } else {
+        await Share.shareFiles(
+          [filePath],
+          text: '"${quote.text}" - ${quote.author}',
+        );
+      }
     } catch (e) {
-      debugPrint('Error saving quote image: $e');
-      return quote.imageUrl;
+      debugPrint('Share failed: $e');
+      throw QuoteShareException('Failed to share quote');
     }
   }
 
-  Future<ui.Image> _convertImageToUiImage(img.Image image) async {
-    try {
-      final completer = Completer<ui.Image>();
-      final rgbaBytes = image.getBytes(
-        order: img.ChannelOrder.rgba,
-      );
+  List<Quote> getQuotesByCategory(String category) {
+    return _cachedQuotes.where((quote) => quote.category == category).toList();
+  }
 
-      if (rgbaBytes.length != image.width * image.height * 4) {
-        throw Exception('Invalid RGBA byte data length');
+  Future<void> saveToCache({String category = 'General'}) async {
+    if (_currentQuote == null || isCached(_currentQuote!)) return;
+
+    try {
+      // Download and save the image first
+      String localImagePath;
+      if (_currentQuote!.imageUrl.startsWith('http')) {
+        localImagePath = await _downloadAndSaveImage(_currentQuote!.imageUrl);
+      } else {
+        // If it's already a local path, use it directly
+        localImagePath = _currentQuote!.imageUrl;
       }
 
-      ui.decodeImageFromPixels(
-        rgbaBytes,
-        image.width,
-        image.height,
-        ui.PixelFormat.rgba8888,
-        (ui.Image result) => completer.complete(result),
+      // Create the cached quote with local image path
+      final cachedQuote = Quote(
+        text: _currentQuote!.text,
+        author: _currentQuote!.author,
+        gradientColors: _currentQuote!.gradientColors,
+        imageUrl: localImagePath,
+        category: category,
       );
 
-      return await completer.future;
+      _cachedQuotes.add(cachedQuote);
+      await _persistCachedQuotes();
+      notifyListeners();
     } catch (e) {
-      debugPrint('Image conversion error: $e');
-      rethrow;
+      debugPrint('Failed to cache quote: $e');
+      throw QuoteSaveException('Failed to save quote to cache');
     }
   }
+}
 
-  Future<void> shareQuote(Quote quote) async {
-    try {
-      final imagePath = await saveQuoteImage(quote);
-      await Share.shareFiles([imagePath], text: '"${quote.text}" - ${quote.author}');
-    } catch (e) {
-      debugPrint('Error sharing quote: $e');
-    }
-  }
+class QuoteFetchException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  QuoteFetchException(this.message, [this.statusCode]);
+
+  @override
+  String toString() => message;
+}
+
+class ImageCaptureException implements Exception {
+  final String message;
+  ImageCaptureException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class QuoteSaveException implements Exception {
+  final String message;
+  QuoteSaveException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class QuoteShareException implements Exception {
+  final String message;
+  QuoteShareException(this.message);
+
+  @override
+  String toString() => message;
 }

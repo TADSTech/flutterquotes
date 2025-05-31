@@ -1,0 +1,2 @@
+C:/Users/TADS/Dart proj/flutterquotes/android/app/.cxx/Debug/70115v31/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/TADS/Dart proj/flutterquotes/android/app/.cxx/Debug/70115v31/armeabi-v7a/CMakeFiles/rebuild_cache.dir

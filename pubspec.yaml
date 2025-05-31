@@ -35,8 +35,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/fonts/budgeta_script/Budgeta Script.ttf
+    - assets/fonts/budgeta_script/Budgeta_Script.ttf
+
   fonts:
     - family: BudgetaScript
       fonts:
-        - asset: assets/fonts/budgeta_script/Budgeta Script.ttf
+        - asset: assets/fonts/budgeta_script/Budgeta_Script.ttf
