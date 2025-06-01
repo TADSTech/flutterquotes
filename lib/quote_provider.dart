@@ -203,11 +203,9 @@ class QuoteProvider with ChangeNotifier {
       final canvas = Canvas(recorder);
       final paint = Paint();
 
-      // Get the selected font from preferences
       final prefs = await SharedPreferences.getInstance();
       final selectedFont = prefs.getString('quote_font') ?? 'Default';
 
-      // Try to load the background image first
       try {
         if (kIsWeb) {
           final image = await _loadImageForWeb(quote.imageUrl);
@@ -231,7 +229,6 @@ class QuoteProvider with ChangeNotifier {
         }
       } catch (e) {
         debugPrint('Using gradient fallback: $e');
-        // Fallback to gradient background
         final gradient = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -245,13 +242,13 @@ class QuoteProvider with ChangeNotifier {
         canvas.drawRect(rect, paint..shader = gradient.createShader(rect));
       }
 
-      // Add a semi-transparent overlay for better text readability
+      // Semi-transparent overlay
       canvas.drawRect(
         Rect.fromLTWH(0, 0, _imageWidth.toDouble(), _imageHeight.toDouble()),
         paint..color = Colors.black.withOpacity(0.3),
       );
 
-      // Determine font based on selection
+      // Font resolution
       String fontFamily;
       switch (selectedFont) {
         case 'Serif':
@@ -267,10 +264,9 @@ class QuoteProvider with ChangeNotifier {
           fontFamily = 'Handwriting';
           break;
         default:
-          fontFamily = 'QuoteFont'; // Default custom font
+          fontFamily = 'QuoteFont';
       }
 
-      // Load font if it's our custom font
       if (fontFamily == 'QuoteFont') {
         final fontLoader = FontLoader('QuoteFont')
           ..addFont(rootBundle
@@ -278,58 +274,53 @@ class QuoteProvider with ChangeNotifier {
         await fontLoader.load();
       }
 
-      // Calculate text positioning
       final quoteText = '"${quote.text}"';
-      final quoteHeight =
-          _calculateTextHeight(quoteText, _imageWidth * 0.8, 36);
-      final authorHeight =
-          _calculateTextHeight(quote.author, _imageWidth * 0.8, 28);
-
-      // Draw quote text with proper spacing
-      final quoteParagraph = _buildTextParagraph(
-        text: quoteText,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 36,
-          fontFamily: fontFamily,
-          height: 1.5,
-          shadows: [
-            Shadow(
+      final quoteStyle = TextStyle(
+        color: Colors.white,
+        fontSize: 36,
+        fontFamily: fontFamily,
+        height: 1.5,
+        shadows: [
+          Shadow(
               blurRadius: 6,
               color: Colors.black.withOpacity(0.5),
-              offset: Offset(2, 2),
-            ),
-          ],
-        ),
-        maxWidth: _imageWidth * 0.8,
+              offset: Offset(2, 2)),
+        ],
       );
 
-      // Center the quote vertically with space for author
-      final quoteY = (_imageHeight - quoteHeight - authorHeight - 40) / 2;
-      canvas.drawParagraph(quoteParagraph, Offset(_imageWidth * 0.1, quoteY));
-
-      // Draw author text with proper spacing below quote
-      final authorParagraph = _buildTextParagraph(
-        text: '- ${quote.author}',
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.9),
-          fontSize: 28,
-          fontFamily: fontFamily,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
+      final authorStyle = TextStyle(
+        color: Colors.white.withOpacity(0.9),
+        fontSize: 28,
+        fontFamily: fontFamily,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
               blurRadius: 4,
               color: Colors.black.withOpacity(0.5),
-              offset: Offset(1, 1),
-            ),
-          ],
-        ),
-        maxWidth: _imageWidth * 0.8,
+              offset: Offset(1, 1)),
+        ],
       );
-      canvas.drawParagraph(authorParagraph,
-          Offset(_imageWidth * 0.1, quoteY + quoteHeight + 40));
 
-      // Add watermark if sharing on Android
+      final quoteParagraph = _buildTextParagraph(
+        text: quoteText,
+        style: quoteStyle,
+        maxWidth: _imageWidth * 0.8,
+      )..layout(ui.ParagraphConstraints(width: _imageWidth * 0.8));
+
+      final authorParagraph = _buildTextParagraph(
+        text: "- ${quote.author}",
+        style: authorStyle,
+        maxWidth: _imageWidth * 0.8,
+      )..layout(ui.ParagraphConstraints(width: _imageWidth * 0.8));
+
+      final totalHeight = quoteParagraph.height + authorParagraph.height + 40;
+      final startY = (_imageHeight - totalHeight) / 2;
+
+      canvas.drawParagraph(quoteParagraph, Offset(_imageWidth * 0.1, startY));
+      canvas.drawParagraph(authorParagraph,
+          Offset(_imageWidth * 0.1, startY + quoteParagraph.height + 40));
+
+      // Watermark
       if (forShare && !kIsWeb && Platform.isAndroid) {
         final watermarkParagraph = _buildTextParagraph(
           text: _watermarkText,
@@ -339,7 +330,8 @@ class QuoteProvider with ChangeNotifier {
             fontStyle: FontStyle.italic,
           ),
           maxWidth: _imageWidth.toDouble(),
-        );
+        )..layout(ui.ParagraphConstraints(width: _imageWidth.toDouble()));
+
         canvas.drawParagraph(
           watermarkParagraph,
           Offset(
@@ -349,14 +341,11 @@ class QuoteProvider with ChangeNotifier {
         );
       }
 
-      // Convert to image
       final picture = recorder.endRecording();
       final image = await picture.toImage(_imageWidth, _imageHeight);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-      if (byteData == null) {
+      if (byteData == null)
         throw ImageCaptureException('Failed to convert image to bytes');
-      }
 
       return byteData.buffer.asUint8List();
     } catch (e) {

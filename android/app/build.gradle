@@ -5,6 +5,11 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+dependencies {
+    implementation "com.google.errorprone:error_prone_annotations:2.11.0"
+    implementation "com.google.code.findbugs:jsr305:3.0.2"
+}
+
 android {
     namespace = "com.tadstech.flutterquotes"
     compileSdk = flutter.compileSdkVersion
