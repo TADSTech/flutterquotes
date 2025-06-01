@@ -23,9 +23,9 @@ An inspirational quotes app built with Flutter that allows you to discover, save
 ⚠️ **Web support is not fully implemented yet**  
 Some features may not work correctly in web browsers. Assistance with web implementation would be appreciated.
 
-## Screenshots
+## Screenshot
 
-Not available yet
+![Flutterquotes banner](assets\images\flutterquotes.png)
 
 ## Dependencies
 
