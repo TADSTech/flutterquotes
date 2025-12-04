@@ -1,7 +1,7 @@
 {
   "hosting": {
     "site": "flutterquotes",
-    "public": "build/web",
+    "public": "website/",
     "ignore": [
       "firebase.json",
       "**/.*",
